@@ -1,4 +1,4 @@
-﻿# .github/workflows/build.yml
+# .github/workflows/build.yml
 # Build and Release workflow for MathExpressions
 #
 # - Trigger on push to any branch, on version tags (e.g., v1.2.3), or on manual dispatch.
@@ -330,7 +330,7 @@ jobs:
       # https://github.com/marketplace/actions/github-script
       - name: 🧪 Check if release exists with the same name
         id: check_release
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const name = '${{ steps.get_version.outputs.name }}';
