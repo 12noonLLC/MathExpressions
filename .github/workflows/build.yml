@@ -1,4 +1,5 @@
 # .github/workflows/build.yml
+#
 # Build and Release workflow for MathExpressions
 #
 # - Trigger on push to any branch, on version tags (e.g., v1.2.3), or on manual dispatch.
@@ -6,13 +7,13 @@
 # - If the version tag is not on the 'main' branch, mark the GitHub release as 'draft'.
 # - Manual dispatch builds the project but does not create a GitHub release.
 
-name: Build MathExpressions
+name: Build
 
 on:
   push:
     branches: [ '**' ]
     tags:
-      - 'v*' # Match version tags like v1.2.3
+      - 'v*'
     paths-ignore:
       - '**/*.gitignore'
       - '**/*.gitattributes'
@@ -27,191 +28,144 @@ on:
       - 'LICENSE'
   workflow_dispatch:
 
-permissions:
-  contents: write
-  packages: write
-  actions: write  # 👈 lets skip-duplicate-actions cancel other runs
-
 env:
-  # Path to the project files relative to the root of the project.
-  PROJECT_LIBRARY_FILE_PATH:  MathExpressions\MathExpressions.csproj
-  PROJECT_TESTS_FILE_PATH:    MathExpressions.UnitTests\MathExpressions.UnitTests.csproj
+  PROJECT_NUGET_PATH: MathExpressions\MathExpressions.csproj
+  PROJECT_TESTS_PATH: MathExpressions.UnitTests\MathExpressions.UnitTests.csproj
 
-  # Configuration type to build.
+  # Configuration type to build
   # You can convert this to a build matrix if you need coverage of multiple configuration types.
   # https://docs.github.com/actions/learn-github-actions/managing-complex-workflows#using-a-build-matrix
   BUILD_CONFIGURATION: Release
 
-  ARTIFACT_NAME: MathExpressions
-  ARTIFACT_PACKAGE: package-mathexpressions
+  # Local Action constants
+  ARTIFACT_PACKAGE:         package-mathexpressions
+  PUBLISH_FILES_PATH:       ${{ github.workspace }}\release
+  PUBLISH_FILES_PATH_LINUX: ${{ github.workspace }}/release
 
 concurrency:
-  group: mathexpressions-${{ github.sha }}
+  group: mathexpressions-${{ github.event_name }}
   cancel-in-progress: true
 
-# Jobs are run in parallel unless `needs` is specified.
-# https://docs.github.com/en/actions/learn-github-actions/managing-complex-workflows#creating-dependent-jobs
 jobs:
-  # https://github.com/marketplace/actions/skip-duplicate-actions
-  precheck:
-    name: 🧠 Check for redundant runs
-    runs-on: ubuntu-latest
-    outputs:
-      should_skip: ${{ steps.skip.outputs.should_skip }}
-    steps:
-      - id: skip
-        if: ${{ github.ref_type != 'tag' }}
-        uses: fkirc/skip-duplicate-actions@v5.3.1
-        with:
-          paths_ignore: '[ "**/*.gitignore", "**/*.gitattributes", "**/*.md", "LICENSE" ]'
-          skip_after_successful_duplicate: 'true'
-          concurrent_skipping: 'same_content_newer'
-          cancel_others: 'true'
-          do_not_skip: '[ "push" ]'
-
   build:
     name: 🏗 Build and test
-    needs: precheck
-    if: ${{ needs.precheck.outputs.should_skip != 'true' }}
-    runs-on: windows-latest
+    # TODO: Change back when Windows 2025 with VS2026 is available. (4 May 2026)
+    #runs-on: windows-latest
+    runs-on: windows-2025-vs2026
+    permissions:
+      contents: read
 
     steps:
-      - name: 🚫 Prevent rerun if skipped
-        run: |
-          if ($env:GITHUB_RUN_ATTEMPT -gt 1)
-          {
-            Write-Host "This is a rerun. Skipping build."
-            exit 1
-          }
-
-      - name: 🗒️ Output state
+      - name: 🗒️ Output variables
         run: |
           echo "🚀 Building..."
           echo "GITHUB_SHA: ${{ github.sha }}"
           echo "GITHUB_REF: ${{ github.ref }}"
           echo "GITHUB_REF_NAME: ${{ github.ref_name }}"
           echo "GITHUB_REF_TYPE: ${{ github.ref_type }}"
+          echo "GITHUB_EVENT_NAME: ${{ github.event_name }}"
+          echo "GITHUB_EVENT_BASEREF: ${{ github.event.base_ref }}"
+          echo "GITHUB_EVENT_COMMIT_MSG: ${{ github.event.head_commit.message }}"
           #export GITHUB_REF_TYPE="${{ github.ref_type }}"
 
-      # Reference the version with ${{ steps.extract_version.outputs.version }}
-      - name: 🏷️ Extract version from tag
-        id: extract_version
-        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
-        run: |
-          $version = $env:GITHUB_REF -replace '^refs/tags/v', ''
-          echo "version=$version" >> $env:GITHUB_OUTPUT
-          Write-Host "GITHUB_REF: $env:GITHUB_REF"
-          echo "version=$version"
-
-      - name: 🧾 Check out repository
+      - &step_checkout
+        name: 🧾 Check out repository
         uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
 
-      - name: 🛠️ Set up .NET
+      - &step_setup_dotnet
+        name: 🛠️ Set up .NET
         uses: actions/setup-dotnet@v5
         with:
           #dotnet-version: '10.0.x'
           #dotnet-quality: ga
           global-json-file: global.json
 
-      # Work around https://github.com/actions/setup-dotnet/issues/155
-      - name: 🧹 Clean solution and NuGet
+      - &step_restore_nuget
+        name: 📦 Restore NuGet packages
         run: |
-          dotnet clean --configuration ${{env.BUILD_CONFIGURATION}} --runtime win-x64
-          dotnet nuget locals all --clear
+          dotnet restore "${{ env.PROJECT_NUGET_PATH }}"
+          dotnet restore "${{ env.PROJECT_TESTS_PATH }}"
 
-      - name: 📦 Restore NuGet packages
-        run: |
-          dotnet restore
-
-      - name: 🏗 Build MathExpressions library
+      - name: 🧩 Build NuGet package
         run: |
           dotnet build `
+            "${{ env.PROJECT_NUGET_PATH }}" `
             --configuration ${{env.BUILD_CONFIGURATION}} `
-            --property:DefineConstants="LICENSING MY_WINDOWS_WPF"
+            --no-restore
 
-      # https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-test
-      # https://learn.microsoft.com/en-us/dotnet/core/testing/microsoft-testing-platform-intro
+      - name: 🧪 Build unit tests
+        run: |
+          dotnet build `
+            "${{ env.PROJECT_TESTS_PATH }}" `
+            --configuration ${{ env.BUILD_CONFIGURATION }} `
+            --no-restore
+
       - name: 💯 Run unit tests
+        timeout-minutes: 3
         run: |
           dotnet test `
-            --project ${{env.PROJECT_TESTS_FILE_PATH}} `
-            --no-ansi `
-            --no-progress `
-            --output Detailed `
-            --configuration Release
-          dotnet test `
-            --project ${{env.PROJECT_TESTS_FILE_PATH}} `
-            --no-ansi `
-            --no-progress `
-            --output Detailed `
-            --configuration Debug
-
-      #
-      # NUGET PACKAGE
-      #
-      # Ensure pack works even if we do not release.
-      - name: 🧰 Pack NuGet packages to `release` folder
-        run: |
-          # pack => .\artifacts\package\release\MathExpressions.1.2.3.4.nupkg
-          # No need to use --include-symbols because it is specified in the project file.
-          dotnet pack ${{env.PROJECT_LIBRARY_FILE_PATH}} `
+            --project "${{env.PROJECT_TESTS_PATH}}" `
+            --configuration ${{ env.BUILD_CONFIGURATION }} `
+            --no-restore `
             --no-build `
-            --configuration ${{env.BUILD_CONFIGURATION}} `
-            --output ./release/
+            --no-ansi `
+            --no-progress `
+            --output detailed
 
-      - name: 🗒️ List folder
+  build_nuget:
+    name: 📦 Build NuGet Package
+    needs: build
+    # TODO: Change back when Windows 2025 with VS2026 is available. (4 May 2026)
+    #runs-on: windows-latest
+    runs-on: windows-2025-vs2026
+    environment: Production
+    permissions:
+      contents: read
+
+    steps:
+      - *step_checkout
+      - *step_setup_dotnet
+      - *step_restore_nuget
+
+      - name: 🧳 Pack NuGet package
         run: |
-          Get-ChildItem
-          Get-ChildItem .\release\
+          dotnet pack `
+            "${{env.PROJECT_NUGET_PATH}}" `
+            --configuration ${{env.BUILD_CONFIGURATION}} `
+            --no-restore `
+            --include-symbols `
+            --property:SymbolPackageFormat=snupkg `
+            --output "${{ env.PUBLISH_FILES_PATH }}"
 
-      # MathExpressions.A.B.C.nupkg
-      - name: 🔍 Extract and inspect NuGet packages
+      - name: 🔍 Display NuGet Manifest (.nuspec)
         shell: pwsh
         run: |
-          # Use PowerShell syntax for variable handling
-          #$packageName = "MathExpressions.*.$env:VERSION.nupkg"
-          $packageItem = Get-ChildItem ./release/*.nupkg | ForEach-Object {
-            $packageItem = $_
-
-            Write-Host "Package name: $($packageItem.Name)"
-            dir ./release/
-  
-            # Create a temp folder per package to avoid collisions
-            $tempDir = Join-Path -Path (Get-Location) -ChildPath ("temp_" + [IO.Path]::GetFileNameWithoutExtension($packageItem.Name))
-            mkdir $tempDir -Force | Out-Null  
-
-            Copy-Item $packageItem.FullName $tempDir/
-            Set-Location $tempDir
-
-            dir
-
-            $zipName = "$($packageItem.Name).zip"
-            Rename-Item -Path $packageItem.Name -NewName $zipName
-
-            dir
-            Write-Host "unzip $zipName"
-            Expand-Archive -Path $zipName -DestinationPath ./ -Force
-            dir
-            Get-Content *.nuspec
-
-            Set-Location ..
-          }
+          $packageItem = Get-ChildItem $env:PUBLISH_FILES_PATH_LINUX -Filter *.nupkg | Select-Object -First 1
+          Write-Host "Package name: $($packageItem.Name)"
+          Get-ChildItem $env:PUBLISH_FILES_PATH_LINUX
+          mkdir temp
+          Copy-Item -Path $packageItem.FullName -Destination ./temp/
+          Set-Location temp
+          Get-ChildItem
+          Rename-Item -Path $packageItem.Name -NewName ($packageItem.Name + '.zip')
+          Get-ChildItem
+          Write-Host "unzip $($packageItem.Name).zip"
+          Expand-Archive -Path ($packageItem.Name + '.zip') -DestinationPath ./
+          Get-ChildItem
+          Get-Content *.nuspec
+          Set-Location ..
 
       - name: 📂 Copy extra files to release folder
         run: |
-          Copy-Item -Path README.md -Destination ./release/
-          Copy-Item -Path LICENSE -Destination ./release/
+          Copy-Item -Destination "${{ env.PUBLISH_FILES_PATH }}" -Path LICENSE
+          Copy-Item -Destination "${{ env.PUBLISH_FILES_PATH }}" -Path README.md
 
-      # Upload release artifact to share with next job
-      # https://docs.github.com/en/actions/guides/storing-workflow-data-as-artifacts#about-workflow-artifacts
-      # https://github.com/marketplace/actions/upload-a-build-artifact
-      - name: 📤 Upload deployment folder as a build artifact
+      - name: 📤 Upload deployment folder
         uses: actions/upload-artifact@v7
         with:
           name: ${{env.ARTIFACT_PACKAGE}}
-          path: ./release/
+          path: ${{ env.PUBLISH_FILES_PATH }}
+          if-no-files-found: error
           retention-days: 1
 
   #
@@ -234,18 +188,22 @@ jobs:
   # •	Tag push on other branch: Both build and release jobs run, draft release, no NuGet publish.
   # •	Tag push on main: Both build and release jobs run, production release and NuGet publish.
   #
-  # | Scenario        | Build | Release Job Runs | Release Type | NuGet Publish | Notes               |
-  # |-----------------|-------|------------------|--------------|---------------|---------------------|
-  # | Normal (no tag) | Yes   | No               | N/A          | No            | Only build          |
-  # | Manual dispatch | Yes   | No               | N/A          | No            | Only build          |
-  # | Test (other br) | Yes   | Yes              | Draft        | No            | Tag on other branch |
-  # | Release (main)  | Yes   | Yes              | Production   | Yes           | Tag on main         |
+  # | Scenario        | Build | Release Job | Release Type | NuGet Publish | Notes               |
+  # |-----------------|-------|-------------|--------------|---------------|---------------------|
+  # | Normal (no tag) | Yes   | No          | N/A          | No            | Only build          |
+  # | Manual dispatch | Yes   | No          | N/A          | No            | Only build          |
+  # | Test (other br) | Yes   | Yes         | Draft        | No            | Tag on other branch |
+  # | Release (main)  | Yes   | Yes         | Production   | Yes           | Tag on main         |
   #
   release:
-    name: 🚀 Create GitHub packages
-    needs: build
+    name: 🚀 Publish GitHub package
+    # We require the 'build' job because it runs unit tests.
+    needs: [ build, build_nuget]
     if: ${{ startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
+    environment: Production
+    permissions:
+      contents: write
 
     steps:
       - name: 🧾 Check out repository
@@ -253,37 +211,14 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Required for the 'dotnet nuget' command
-      - name: 🛠️ Set up .NET
-        uses: actions/setup-dotnet@v5
-        with:
-          #dotnet-version: '10.0.x'
-          #dotnet-quality: ga
-          global-json-file: global.json
-
-      # Download publish artifact from previous job
-      # https://github.com/marketplace/actions/download-a-build-artifact
-      - name: 📥 Download deployment folder as a build artifact
+      - name: 📥 Download deployment folder
         uses: actions/download-artifact@v8
         with:
           name: ${{env.ARTIFACT_PACKAGE}}
-          path: ./release/
+          path: ${{ env.PUBLISH_FILES_PATH_LINUX }}
 
       - name: 🗒️ List folder
-        run: ls -la ./release/
-
-      - name: 🧩 Publish NuGet packages to GitHub Packages
-        run: |
-          dotnet nuget push \
-            ./release/*.nupkg \
-            --source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" \
-            --api-key ${{ secrets.GITHUB_TOKEN }} \
-            --skip-duplicate
-
-      - name: 📦 Zip Release folder
-        working-directory: ./release
-        run: |
-          zip ../${{env.ARTIFACT_NAME}}.zip *
+        run: ls -la ${{ env.PUBLISH_FILES_PATH_LINUX }}
 
       - name: 🏷️ Get short SHA of the tag
         id: tag_sha
@@ -307,8 +242,6 @@ jobs:
             echo "on_main=false"
           fi
 
-      # Determine the version/tag for the release
-      # https://docs.github.com/en/actions/how-tos/writing-workflows/choosing-what-your-workflow-does/store-information-in-variables
       - name: 🏷️ Get version tag and release name
         id: get_version
         run: |
@@ -324,53 +257,74 @@ jobs:
           echo "tag=$tag"
           echo "name=$name"
 
-      # Create a release only if one does not already exist for this name.
-      # (We check the name instead of the tag because we
-      # might have multiple test releases for a version.)
+      # Create a release only if one does not already exist for this tag.
+      # We now check by *tag* instead of by name because:
+      # - The tag (e.g., "v1.2.3") is guaranteed unique in Git.
+      # - The release name (e.g., "1.2.3") differs only by the "v" prefix.
+      # - Our workflow enforces a strict 1:1 mapping between version → tag → release.
+      # - We no longer create multiple test releases with different tags for the same version.
+      # Therefore, a direct lookup by tag is the most reliable and deterministic check.
       # https://github.com/marketplace/actions/github-script
-      - name: 🧪 Check if release exists with the same name
-        id: check_release
+      - name: 🧪 Check if release exists with the same tag
+        id: release_exists
         uses: actions/github-script@v9
         with:
-          script: |
-            const name = '${{ steps.get_version.outputs.name }}';
-            const { data: releases } = await github.rest.repos.listReleases({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-            });
-            const exists = releases.some(r => r.name === name);
-            return exists;
           result-encoding: string
+          script: |
+            const tag  = '${{ steps.get_version.outputs.tag }}';
+            const name = '${{ steps.get_version.outputs.name }}';
+            try
+            {
+              await github.rest.repos.getReleaseByTag(
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag,
+              });
+              console.log(`Release "${name}" for tag ${tag} already exists. Skipping creating a release.`);
+              return true;
+            }
+            catch (error)
+            {
+              if (error.status === 404)
+              {
+                // No release exists for this tag
+                return false;
+              }
+              // Any other error is a real failure
+              throw error;
+            }
 
+      # Create the GitHub Release for this version.
+      # The release tag (e.g., "v1.2.3") is the canonical identifier and is guaranteed unique.
+      # The release name (e.g., "1.2.3") differs only by the "v" prefix but still maps 1:1 to the tag.
+      # Since we now check for existing releases by tag, this step only runs when no release exists
+      # for the version produced by get_version.
       # https://github.com/marketplace/actions/gh-release
       - name: 🚀 Create GitHub Release
-        if: ${{ steps.check_release.outputs.result != 'true' }}
+        if: ${{ steps.release_exists.outputs.result != 'true' }}
         uses: softprops/action-gh-release@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ steps.get_version.outputs.tag }}
-          name: ${{ steps.get_version.outputs.name }}
-          # tag on 'main' => latest
-          # else => draft
-          make_latest: ${{ startsWith(github.ref, 'refs/tags/v') && (steps.tag_on_main.outputs.on_main == 'true') }}
-          draft:      ${{ !(startsWith(github.ref, 'refs/tags/v') && (steps.tag_on_main.outputs.on_main == 'true')) }}
-          #draft: ${{ (github.ref != 'refs/heads/main') || (startsWith(github.ref, 'refs/tags/') && !startsWith(github.ref, 'refs/tags/v')) }}
+          name:     ${{ steps.get_version.outputs.name }}
+          make_latest: ${{ steps.tag_on_main.outputs.on_main == 'true' }}
+          draft:       ${{ steps.tag_on_main.outputs.on_main != 'true' }}
           # There is also a `prerelease` property. (Example: if manual start, which implies no v tag)
           #prerelease: ${{ github.event_name == 'workflow_dispatch' }}
-          files: ${{env.ARTIFACT_NAME}}.zip
+          files: ${{ env.PUBLISH_FILES_PATH_LINUX }}/*
           generate_release_notes: true
           append_body: true
           body: |
-            <a href="https://apps.microsoft.com/detail/9WZDNCRDLVCN?referrer=appbadge&mode=direct">
+            <p><a href="https://apps.microsoft.com/detail/9WZDNCRDLVCN?referrer=appbadge&mode=direct">
               <img src="https://get.microsoft.com/images/en-us%20dark.svg" width="200"/>
-            </a>
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            </a></p>
 
       - name: 🗒️ Output release info
-        if: ${{ steps.check_release.outputs.result != 'true' }}
+        if: ${{ steps.release_exists.outputs.result != 'true' }}
         run: |
-          echo "Release created for tag: ${{ steps.get_version.outputs.tag }}"
-          echo "Release name: ${{ steps.get_version.outputs.name }}"
+          echo "Release ${{ steps.get_version.outputs.name }} created on tag ${{ steps.get_version.outputs.tag }}"
 
   #
   # https://docs.github.com/en/actions/how-tos/writing-workflows/choosing-when-your-workflow-runs/using-conditions-to-control-job-execution
@@ -381,9 +335,10 @@ jobs:
   #
   cleanup:
     name: 🧹 Clean up artifacts
-    needs: [release]
-    runs-on: ubuntu-latest
+    needs: release
     if: ${{ always() }}
+    runs-on: ubuntu-latest
+
     steps:
       # Delete publish artifact so it does not count against storage
       # https://github.com/marketplace/actions/delete-artifact

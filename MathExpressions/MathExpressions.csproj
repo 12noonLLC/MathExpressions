@@ -2,19 +2,15 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
+    <ImplicitUsings>disable</ImplicitUsings>
     <SignAssembly>true</SignAssembly>
     <AssemblyOriginatorKeyFile>MathExpressions.snk</AssemblyOriginatorKeyFile>
     <Title>MathExpressions</Title>
-    <Version>3.30.0.0</Version>
-    <AssemblyVersion>3.30.0.0</AssemblyVersion>
-    <Authors>12noon LLC</Authors>
-    <Copyright>(c) 2020-2026 12noon LLC</Copyright>
+    <Description>A library that evaluates math expressions, functions, and variables. It also saves and restores history and variables. This is used by the Calculate X applications from 12noon LLC.</Description>
     <PackageProjectUrl>https://12noon.com</PackageProjectUrl>
     <RepositoryUrl>https://github.com/12noonLLC/MathExpressions</RepositoryUrl>
     <IncludeSymbols>True</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
-    <Description>A library that evaluates math expressions, functions, and variables. It also saves and restores history and variables. This is used by the Calculate X applications from 12noon LLC.</Description>
   </PropertyGroup>
   <ItemGroup>
     <EmbeddedResource Update="Properties\Resources.resx">

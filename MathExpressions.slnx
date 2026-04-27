@@ -5,11 +5,12 @@
   </Configurations>
   <Folder Name="/Solution Items/">
     <File Path=".github/workflows/build.yml" />
+    <File Path=".github/workflows/publish-nuget.yml" />
     <File Path=".runsettings" />
+    <File Path="devtools/BuildNuGet.cmd" />
     <File Path="Directory.Build.props" />
     <File Path="global.json" />
     <File Path="LICENSE" />
-    <File Path="PublishProject.cmd" />
     <File Path="README.md" />
   </Folder>
   <Project Path="MathExpressions/MathExpressions.csproj" />

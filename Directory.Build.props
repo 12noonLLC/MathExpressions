@@ -2,12 +2,36 @@
 <Project>
 
 	<PropertyGroup>
-		<!--
-		<ArtifactsPath>C:\VSIntermediate\MathExpressions\artifacts\</ArtifactsPath>
-		-->
+		<Product>MathExpressions</Product>
+		<Description>MathExpressions evaluates math expressions, functions, and variables. It also saves and restores history and variables. This is used by the Calculate X applications from 12noon LLC.</Description>
 
-		<BaseOutputPath>C:\VSIntermediate\MathExpressions\artifacts\bin\$(MSBuildProjectName)\</BaseOutputPath>
-		<BaseIntermediateOutputPath>C:\VSIntermediate\MathExpressions\artifacts\obj\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
+		<Authors>Stefan K.S. Tucker</Authors>
+		<Company>12noon LLC</Company>
+		<Year>$([System.DateTime]::UtcNow.Year)</Year>
+		<Copyright>© 2021-$(Year) 12noon LLC</Copyright>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<VersionPrefix>3.30.1</VersionPrefix>
+		<VersionSuffix Condition="'$(Configuration)' == 'Debug'">debug</VersionSuffix>
+		<!-- `Version` defaults to `VersionPrefix`+`VersionSuffix` -->
+
+		<!-- Windows file properties A.B.C.0 -->
+		<FileVersion>$(VersionPrefix).0</FileVersion>
+
+		<!-- Stable API identity version, usually updated only on breaking changes -->
+		<!-- Only set in individual projects. -->
+		<AssemblyVersion />
+
+		<!-- Used for human-readable version, About, Explorer, crash logs, marketing|build metadata -->
+		<!-- Defaults to `Version`+githash -->
+		<InformationalVersion />
+		<IncludeSourceRevisionInInformationalVersion>true</IncludeSourceRevisionInInformationalVersion>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<ArtifactsPath>C:\VSIntermediate\MathExpressions\artifacts\</ArtifactsPath>
+		<BaseIntermediateOutputPath>$(ArtifactsPath)obj\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
 	</PropertyGroup>
 	
 </Project>
